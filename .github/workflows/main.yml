@@ -6,19 +6,22 @@ on:
 jobs:
   build-chromium:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6 Saat Zaman Sınırı
+    timeout-minutes: 360 # 6 Saat
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. Disk Temizliği (Chromium için yer açma)
-    - name: Free Disk Space
-      run: |
-        echo "Gereksiz dosyalar temizleniyor..."
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/ghc
-        sudo docker image prune --all --force
+    # 1. AGRESİF Disk Temizliği (Yer Yetmezliğini Önlemek İçin)
+    - name: Maximize Disk Space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 2048
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        remove-codeql: 'true'
+        remove-docker-images: 'true'
 
     # 2. Araçların Kurulumu
     - name: Install depot_tools
@@ -26,7 +29,7 @@ jobs:
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
         echo "$PWD/depot_tools" >> $GITHUB_PATH
 
-    # 3. Kaynak Kod (Sadece Android ve Geçmişsiz - Hız için)
+    # 3. Kaynak Kod (Sadece Gerekenler - Hız için)
     - name: Fetch Chromium Source
       run: |
         mkdir chromium
@@ -35,25 +38,25 @@ jobs:
       env:
         DEPOT_TOOLS_UPDATE: 0
 
-    # 4. Bağımlılıklar
+    # 4. Bağımlılıklar (Sadece zorunlu olanlar)
     - name: Install Deps
       run: |
         cd chromium/src
-        ./build/install-build-deps-android.sh --no-prompt
+        # Gereksiz fontları ve test dosyalarını atla
+        ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
         gclient runhooks
 
     # 5. Yamalar ve Ayarlar
     - name: Configure
       run: |
-        echo "Ayarlar yapılıyor..."
-        # Burada senin args.gn ve patch dosyalarını uygulayacağız
-        # Şimdilik standart derlemeyi test ediyoruz
+        echo "Ayarlar yükleniyor..."
+        # cp ../../build_config/args.gn chromium/src/out/Default/args.gn
 
-    # 6. DERLEME (Webview APK - Daha hızlı test için)
+    # 6. DERLEME (Hedefe Odaklı)
     - name: Compile SystemWebView
       run: |
         cd chromium/src
-        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false'
+        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0'
         autoninja -C out/Default system_webview_apk
 
     # 7. Sonucu Yükle
