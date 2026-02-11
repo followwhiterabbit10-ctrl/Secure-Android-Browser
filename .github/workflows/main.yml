@@ -1,4 +1,4 @@
-name: Secure Browser Build (v8 - Cromite Base + Custom Features)
+name: Secure Browser Build (v9 - Cromite Fixed Tag)
 
 on:
   workflow_dispatch:
@@ -6,68 +6,59 @@ on:
 jobs:
   build-full-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6 Saat
+    timeout-minutes: 360
 
-    # Cromite'in kararlı derleme imajını kullanıyoruz
     container:
-      image: uazo/cromite-build:latest
+      # KESİN SÜRÜM ETİKETİ (Latest değil!)
+      image: uazo/cromite-build:133-1
 
     steps:
     - uses: actions/checkout@v3
 
     # 1. Temiz Kaynak Kodu Çek
-    - name: Fetch Clean Source (Shallow)
+    - name: Fetch Clean Source
       run: |
-        git clone --depth 1 https://github.com/uazo/cromite.git cromite
+        # Cromite deposunu çek
+        git clone https://github.com/uazo/cromite.git cromite
         cd cromite
-        git submodule update --init --recursive --depth 1
+        # Alt modülleri güncelle (recursive çok önemlidir)
+        git submodule update --init --recursive
 
-    # 2. ÖZELLEŞTİRMELERİ UYGULA (Buraya Eklenecek)
+    # 2. ÖZELLEŞTİRMELER
     - name: Apply Customizations
       run: |
         cd cromite
-        echo "Özel özellikler yükleniyor (Medya Player, Dynamic Theme)..."
-        
-        # --- ÖRNEK: Adres Çubuğu Rengi ---
-        # Bu yama, adres çubuğunun sitenin rengine göre değişmesini sağlar
-        # (Gerçek yamayı sonraki adımda dosya olarak ekleyeceğiz, şimdilik placeholder)
-        touch patches/CustomThemeColor.patch
-        
-        # --- ÖRNEK: Medya Oynatıcı ---
-        # Bu yama, varsayılan videolara 'İndir' butonu ekler
-        touch patches/CustomMediaPlayer.patch
+        echo "Özel özellikler yükleniyor..."
+        # Şimdilik boş, sonra dolduracağız
+        ls -la
 
-    # 3. Derleme Hazırlığı (GN Args)
+    # 3. Derleme Hazırlığı
     - name: Setup Build Config
       run: |
         cd cromite
         mkdir -p out/Release
-        # Orijinal ayarlara ek olarak bizimkileri ekle
-        cat build/args.gn > out/Release/args.gn
-        
-        # İsim ve Paket Adı Değiştirme (Markalama için çok önemli)
-        sed -i 's/org.cromite.cromite/com.secure.browser/g' out/Release/args.gn
-        
-        # Ek Ayarlar
-        echo 'app_name="Secure Browser"' >> out/Release/args.gn
-        echo 'target_os="android"' >> out/Release/args.gn
+        # Varsayılan ayarları kopyala
+        # (Not: Cromite yapısında args.gn farklı yerde olabilir, 
+        # o yüzden garanti olsun diye elle yazıyoruz)
+        echo 'target_os="android"' > out/Release/args.gn
         echo 'target_cpu="arm64"' >> out/Release/args.gn
         echo 'is_debug=false' >> out/Release/args.gn
         echo 'symbol_level=0' >> out/Release/args.gn
         echo 'blink_symbol_level=0' >> out/Release/args.gn
+        echo 'android_channel="stable"' >> out/Release/args.gn
+        
+        # Markalama
+        echo 'app_name="Secure Browser"' >> out/Release/args.gn
 
-    # 4. DERLEME (Ninja)
+    # 4. DERLEME
     - name: Compile APK
       run: |
         cd cromite
-        # Ortam değişkenlerini yükle
-        export PATH=$PATH:$(pwd)/depot_tools
-        . build/env_setup.sh
-        
-        # Derle!
-        ninja -C out/Release chrome_public_apk
+        # Cromite'in kendi derleme scriptini kullanıyoruz
+        # Bu script gerekli GN ve Ninja ayarlarını otomatik yapar
+        ./build.sh --target chrome_public_apk
 
-    # 5. Sonucu Yükle (Artifacts)
+    # 5. Sonucu Yükle
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
