@@ -7,7 +7,7 @@ jobs:
     timeout-minutes: 360
     steps:
     - uses: actions/checkout@v3
-    # 1. Maksimum Disk Temizliği
+    # 1. Yer Açma
     - name: Maximize Disk Space
       uses: easimon/maximize-build-space@master
       with:
@@ -17,7 +17,7 @@ jobs:
         remove-android: 'true'
         remove-codeql: 'true'
         remove-docker-images: 'true'
-    # 2. Araçlar
+    # 2. Araçlar (Depot Tools)
     - name: Install depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /home/runner/work/depot_tools
@@ -29,27 +29,31 @@ jobs:
         mkdir chromium
         cd chromium
         
-        # Google'ın resmi son kararlı sürümünü (tar.xz) indir
-        # Bu yaklaşık 1.5 GB'tır (açılınca 30GB olur)
+        # Google'ın resmi son kararlı sürümünü (tar.xz) indir (~1.5 GB)
         wget https://commondatastorage.googleapis.com/chromium-browser-official/chromium-120.0.6099.109.tar.xz
         
         # Arşivi aç
         tar -xCf . chromium-120.0.6099.109.tar.xz
         mv chromium-120.0.6099.109 src
-        rm chromium-120.0.6099.109.tar.xz # Yer açmak için zipi sil
+        rm chromium-120.0.6099.109.tar.xz # Yer açmak için siliyoruz
     # 4. Bağımlılıklar
     - name: Install Deps
       run: |
         export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
         
-        # Eksik olan .gclient dosyasını oluştur (gclient runhooks için şart)
-        gclient config --unmanaged https://chromium.googlesource.com/chromium/src.git
+        # Eksik olan .gclient dosyasını oluştur (runhooks için şart)
+        cat <<EOF > .gclient
+        solutions = [
+          { "name": "src", "url": "https://chromium.googlesource.com/chromium/src.git", "managed": False, "custom_deps": {}, "custom_vars": {}, },
+        ]
+        target_os = ["android"]
+        EOF
         
-        # Bağımlılıkları senkronize et (DİKKAT: --no-history ile)
-        gclient sync --nohooks --no-history --shallow
         # Kurulum betiğini çalıştır
         ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
+        
+        # Hookları çalıştır (NodeJS, Clang vs. indirir)
         gclient runhooks
     # 5. Derleme
     - name: Compile SystemWebView
