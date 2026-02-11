@@ -1,4 +1,4 @@
-name: Real Android Browser Build
+name: Real Android Browser Build (v3 - Robust Fetch)
 
 on:
   workflow_dispatch:
@@ -6,12 +6,12 @@ on:
 jobs:
   build-chromium:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6 Saat
+    timeout-minutes: 360
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. AGRESİF Disk Temizliği (Yer Yetmezliğini Önlemek İçin)
+    # 1. Disk Temizliği
     - name: Maximize Disk Space
       uses: easimon/maximize-build-space@master
       with:
@@ -23,36 +23,48 @@ jobs:
         remove-codeql: 'true'
         remove-docker-images: 'true'
 
-    # 2. Araçların Kurulumu
+    # 2. Araçlar (Depot Tools)
     - name: Install depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
         echo "$PWD/depot_tools" >> $GITHUB_PATH
 
-    # 3. Kaynak Kod (Sadece Gerekenler - Hız için)
-    - name: Fetch Chromium Source
+    # 3. YENİ YÖNTEM: Gclient ile Manuel sync
+    - name: Fetch Chromium Source (Explicit)
       run: |
         mkdir chromium
         cd chromium
-        fetch --no-history --nohooks android
-      env:
-        DEPOT_TOOLS_UPDATE: 0
+        # Önce boş bir gclient config oluşturuyoruz
+        touch .gclient
+        cat <<EOF > .gclient
+        solutions = [
+          { "name": "src", "url": "https://chromium.googlesource.com/chromium/src.git", "managed": False, "custom_deps": {}, "custom_vars": { "checkout_pgo_profiles": False, }, },
+        ]
+        target_os = ["android"]
+        EOF
+        
+        # Sonra sadece ihtiyacımız olanları indiriyoruz (hook çalıştırmadan)
+        gclient sync --nohooks --no-history --shallow
 
-    # 4. Bağımlılıklar (Sadece zorunlu olanlar)
+    # 4. Bağımlılıklar (Kontrollü)
     - name: Install Deps
       run: |
+        # Önce src klasörü var mı kontrol et, yoksa hata ver
+        ls -F chromium/src/build/install-build-deps-android.sh || (echo "DOSYA YOK! İndirme başarısız." && exit 1)
+        
         cd chromium/src
-        # Gereksiz fontları ve test dosyalarını atla
+        # Betiği çalıştırılabilir yap
+        chmod +x build/install-build-deps-android.sh
         ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
         gclient runhooks
 
-    # 5. Yamalar ve Ayarlar
+    # 5. Ayarlar
     - name: Configure
       run: |
-        echo "Ayarlar yükleniyor..."
+        echo "Configuring..."
         # cp ../../build_config/args.gn chromium/src/out/Default/args.gn
 
-    # 6. DERLEME (Hedefe Odaklı)
+    # 6. Derleme
     - name: Compile SystemWebView
       run: |
         cd chromium/src
