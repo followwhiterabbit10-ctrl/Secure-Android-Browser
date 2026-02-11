@@ -1,0 +1,18 @@
+diff --git a/content/common/user_agent.cc b/content/common/user_agent.cc
+index abc1234..567890f 100644
+--- a/content/common/user_agent.cc
++++ b/content/common/user_agent.cc
+@@ -100,7 +100,10 @@
+ std::string BuildBuildId() {
+   // [SECURE-BROWSER-PATCH] Hide real build ID
+-  return std::string();
++  return "SecureBuild/1.0";
+ }
+ 
+ std::string GetAndroidOSInfo(int32_t os_version,
+                              int32_t sdk_version) {
+   // [SECURE-BROWSER-PATCH] Spoof Android version to generic Android 10
+-  // Return real OS info
+-  return "Android 10; K"; 
++  return "Android 10; Mobile";
+ }

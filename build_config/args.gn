@@ -1,0 +1,27 @@
+# Android Chromium Build Arguments (Privacy & Security Focused)
+
+# Hedef İşletim Sistemi ve Mimari
+target_os = "android"
+target_cpu = "arm64"  # Modern Android cihazlar için
+is_debug = false
+is_official_build = true
+
+# Markalama ve Lisans
+is_chrome_branded = false  # Google Chrome markasını kullanma
+use_official_google_api_keys = false
+
+# Gizlilik ve Güvenlik (Google Servislerini Kapatma)
+enable_remoting = false      # Uzaktan kontrolü kapat
+enable_nacl = false          # Native Client'ı kapat (Eski teknoloji, güvenlik riski)
+enable_reporting = false     # Hata raporlamayı kapat
+use_gms = false              # Google Play Services entegrasyonunu kapat
+enable_gvr_services = false  # VR servislerini kapat
+enable_arcore = false        # ARCore kapat
+
+# Özellikler
+proprietary_codecs = true    # MP4/H.264 video desteği (Netflix/Youtube için gerekli)
+ffmpeg_branding = "Chrome"
+
+# Derleme Hızı İyileştirmeleri (Gereksiz testleri kapat)
+blink_symbol_level = 0
+symbol_level = 0
