@@ -1,46 +1,75 @@
-name: Real Android Browser Build (v7 - Docker)
+name: Secure Browser Build (v8 - Cromite Base + Custom Features)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-in-docker:
+  build-full-browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 Saat
+
+    # Cromite'in kararlı derleme imajını kullanıyoruz
     container:
-      # Chromium için hazırlanmış özel bir Docker İmajı kullanıyoruz (Devasa zaman/yer kazancı!)
-      image: docker://shaseley/chromium-build:latest
-      options: --user root
+      image: uazo/cromite-build:latest
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. Disk Temizliğine GEREK YOK (Docker kendi evini getiriyor)
-    
-    # 2. Kaynak Kodu Çek (Shallow - Sadece Android)
-    - name: Fetch Source (In Docker)
+    # 1. Temiz Kaynak Kodu Çek
+    - name: Fetch Clean Source (Shallow)
       run: |
-        mkdir chromium
-        cd chromium
-        fetch --nohooks --no-history android
-        gclient sync --nohooks --no-history --shallow
+        git clone --depth 1 https://github.com/uazo/cromite.git cromite
+        cd cromite
+        git submodule update --init --recursive --depth 1
 
-    # 3. Bağımlılıklar (Zaten İmajda Var - Hızlı Geçiş)
-    - name: Install Deps (Minimal)
+    # 2. ÖZELLEŞTİRMELERİ UYGULA (Buraya Eklenecek)
+    - name: Apply Customizations
       run: |
-        cd chromium/src
-        ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
-        gclient runhooks
+        cd cromite
+        echo "Özel özellikler yükleniyor (Medya Player, Dynamic Theme)..."
+        
+        # --- ÖRNEK: Adres Çubuğu Rengi ---
+        # Bu yama, adres çubuğunun sitenin rengine göre değişmesini sağlar
+        # (Gerçek yamayı sonraki adımda dosya olarak ekleyeceğiz, şimdilik placeholder)
+        touch patches/CustomThemeColor.patch
+        
+        # --- ÖRNEK: Medya Oynatıcı ---
+        # Bu yama, varsayılan videolara 'İndir' butonu ekler
+        touch patches/CustomMediaPlayer.patch
 
-    # 4. Derleme
-    - name: Compile
+    # 3. Derleme Hazırlığı (GN Args)
+    - name: Setup Build Config
       run: |
-        cd chromium/src
-        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0'
-        autoninja -C out/Default system_webview_apk
+        cd cromite
+        mkdir -p out/Release
+        # Orijinal ayarlara ek olarak bizimkileri ekle
+        cat build/args.gn > out/Release/args.gn
+        
+        # İsim ve Paket Adı Değiştirme (Markalama için çok önemli)
+        sed -i 's/org.cromite.cromite/com.secure.browser/g' out/Release/args.gn
+        
+        # Ek Ayarlar
+        echo 'app_name="Secure Browser"' >> out/Release/args.gn
+        echo 'target_os="android"' >> out/Release/args.gn
+        echo 'target_cpu="arm64"' >> out/Release/args.gn
+        echo 'is_debug=false' >> out/Release/args.gn
+        echo 'symbol_level=0' >> out/Release/args.gn
+        echo 'blink_symbol_level=0' >> out/Release/args.gn
 
-    # 5. Yükle
+    # 4. DERLEME (Ninja)
+    - name: Compile APK
+      run: |
+        cd cromite
+        # Ortam değişkenlerini yükle
+        export PATH=$PATH:$(pwd)/depot_tools
+        . build/env_setup.sh
+        
+        # Derle!
+        ninja -C out/Release chrome_public_apk
+
+    # 5. Sonucu Yükle (Artifacts)
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: DockerWebView
-        path: chromium/src/out/Default/apks/SystemWebView.apk
+        name: SecureBrowser-Release-v1.0
+        path: cromite/out/Release/apks/ChromePublic.apk
