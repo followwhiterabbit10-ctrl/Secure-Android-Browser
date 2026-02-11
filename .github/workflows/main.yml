@@ -1,79 +1,63 @@
-name: Real Android Browser Build (v5 - Ultra Light)
-
+name: Real Android Browser Build (v6 - Tarball Method)
 on:
   workflow_dispatch:
-
 jobs:
   build-chromium:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # 6 Saat
-
+    timeout-minutes: 360
     steps:
     - uses: actions/checkout@v3
-
-    # 1. Agresif Temizlik (Swap Bile Yok!)
+    # 1. Maksimum Disk Temizliği
     - name: Maximize Disk Space
       uses: easimon/maximize-build-space@master
       with:
-        root-reserve-mb: 512       # Kök dizinde yer ayır
-        swap-size-mb: 1024         # Minimum Swap
+        root-reserve-mb: 512
+        swap-size-mb: 1024
         remove-dotnet: 'true'
         remove-android: 'true'
-        remove-haskell: 'true'
         remove-codeql: 'true'
         remove-docker-images: 'true'
-
-    # 2. Araçlar (Depot Tools)
+    # 2. Araçlar
     - name: Install depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /home/runner/work/depot_tools
         echo "/home/runner/work/depot_tools" >> $GITHUB_PATH
         export PATH="/home/runner/work/depot_tools:$PATH"
-
-    # 3. YENİ: Sadece Android Araçlarını İndir (Diğerlerini engelle)
-    - name: Fetch Chromium Source (Lightweight)
-      env:
-        DEPOT_TOOLS_UPDATE: 0
-        GCLIENT_PY3: 1
+    # 3. YENİ YÖNTEM: Tarball İndir (Tek Dosya!)
+    - name: Fetch Chromium Source (Tarball)
       run: |
         mkdir chromium
         cd chromium
         
-        # Bu satır Google'a "Ben sadece Android istiyorum" diyor!
-        cat <<EOF > .gclient
-        solutions = [
-          { 
-            "name": "src", 
-            "url": "https://chromium.googlesource.com/chromium/src.git", 
-            "managed": False, 
-            "custom_deps": {}, 
-            "custom_vars": { "checkout_pgo_profiles": False, }, 
-          },
-        ]
-        target_os = ["android"]
-        EOF
+        # Google'ın resmi son kararlı sürümünü (tar.xz) indir
+        # Bu yaklaşık 1.5 GB'tır (açılınca 30GB olur)
+        wget https://commondatastorage.googleapis.com/chromium-browser-official/chromium-120.0.6099.109.tar.xz
         
-        # Sadece derinlik 1 (shallow) ile çek
-        gclient sync --nohooks --no-history --shallow --jobs 16
-
-    # 4. Bağımlılıklar (Sadece zorunlular)
+        # Arşivi aç
+        tar -xCf . chromium-120.0.6099.109.tar.xz
+        mv chromium-120.0.6099.109 src
+        rm chromium-120.0.6099.109.tar.xz # Yer açmak için zipi sil
+    # 4. Bağımlılıklar
     - name: Install Deps
       run: |
+        export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
-        # Betiği elle indirip çalıştır (bazen gclient indirmez)
-        curl -LO https://chromium.googlesource.com/chromium/src/+/main/build/install-build-deps-android.sh?format=TEXT | base64 -d > install-build-deps-android.sh
-        chmod +x install-build-deps-android.sh
-        sudo ./install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
+        
+        # Eksik olan .gclient dosyasını oluştur (gclient runhooks için şart)
+        gclient config --unmanaged https://chromium.googlesource.com/chromium/src.git
+        
+        # Bağımlılıkları senkronize et (DİKKAT: --no-history ile)
+        gclient sync --nohooks --no-history --shallow
+        # Kurulum betiğini çalıştır
+        ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
         gclient runhooks
-
-    # 5. Derleme (Hata ayıklama sembolleri yok - Hız ve yer için)
+    # 5. Derleme
     - name: Compile SystemWebView
       run: |
+        export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
-        # symbol_level=0 çok önemli! Yer kazandırır.
         gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0 blink_symbol_level=0'
         autoninja -C out/Default system_webview_apk
-
     # 6. Sonucu Yükle
     - name: Upload APK
       uses: actions/upload-artifact@v4
