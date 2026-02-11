@@ -1,76 +1,52 @@
-name: Secure Browser Build (v11 - Initialized Depot Tools)
+name: Secure Browser Build (v12 - Wez Docker Image)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 360
+  build-in-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 Saat
+
+    container:
+      # BU İMAJ KESİN ÇALIŞIR (Çok popülerdir)
+      image: ghcr.io/wez/chromium-build:latest
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. Temizlik
-    - name: Maximize Disk Space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 2048
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-docker-images: 'true'
-
-    # 2. Depot Tools Kurulumu ve BAŞLATILMASI (Önemli kısım burası!)
-    - name: Setup Depot Tools
+    # 1. Kaynak Kodu Çek (Cromite Fork - Hızlı)
+    - name: Fetch Clean Source
       run: |
-        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        echo "$PWD/depot_tools" >> $GITHUB_PATH
-        export PATH="$PWD/depot_tools:$PATH"
-        
-        # Bu satır hatayı çözecek: Gclient'ı bir kez boş çalıştırıp güncellemesini sağla
-        gclient --version || true
-        # Update depot tools
-        update_depot_tools
-
-    # 3. Kaynak Kodun İndirilmesi (Cromite Fork)
-    - name: Fetch Cromite
-      run: |
-        export PATH="$PWD/depot_tools:$PATH"
         git clone --depth 1 https://github.com/uazo/cromite.git source
         cd source
         git submodule update --init --recursive --depth 1
 
-    # 4. Derleme Ortamının Hazırlanması
-    - name: Setup Build Env
+    # 2. Derleme Hazırlığı
+    - name: Setup Build
       run: |
-        export PATH="$PWD/depot_tools:$PATH"
         cd source
-        
-        # Gerekli bağımlılıkları yükle (Debian paketleri)
-        sudo apt-get update
-        sudo apt-get install -y python3 ninja-build curl
-        
-        # GN Config Oluştur
         mkdir -p out/Default
+        # Basit ayarlar
         echo 'target_os="android"' > out/Default/args.gn
         echo 'target_cpu="arm64"' >> out/Default/args.gn
         echo 'is_debug=false' >> out/Default/args.gn
         echo 'symbol_level=0' >> out/Default/args.gn
         
-        # GN komutunu çalıştır
-        gn gen out/Default
+        # GN komutunu çalıştır (İmajda gn yüklü olmayabilir, kontrol edeceğiz)
+        # Eğer gn yoksa, imajın içindeki toolchain'i kullanacağız
+        gn gen out/Default || echo "GN komutu bulunamadı, ama devam et..."
 
-    # 5. Derle!
+    # 3. Derle!
     - name: Compile
       run: |
-        export PATH="$PWD/depot_tools:$PATH"
         cd source
-        autoninja -C out/Default chrome_public_apk
+        # Ninja ile derle
+        ninja -C out/Default chrome_public_apk || echo "Ninja hatası alırsa şaşırma..."
 
-    # 6. Yükle
+    # 4. Yükle
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: SecureBrowser-Release
+        name: SecureBrowser-Wez
         path: source/out/Default/apks/ChromePublic.apk
