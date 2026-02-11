@@ -1,70 +1,46 @@
-name: Real Android Browser Build (v6 - Tarball Method)
+name: Real Android Browser Build (v7 - Docker)
+
 on:
   workflow_dispatch:
+
 jobs:
-  build-chromium:
+  build-in-docker:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    container:
+      # Chromium için hazırlanmış özel bir Docker İmajı kullanıyoruz (Devasa zaman/yer kazancı!)
+      image: docker://shaseley/chromium-build:latest
+      options: --user root
+
     steps:
     - uses: actions/checkout@v3
-    # 1. Yer Açma
-    - name: Maximize Disk Space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 512
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-codeql: 'true'
-        remove-docker-images: 'true'
-    # 2. Araçlar (Depot Tools)
-    - name: Install depot_tools
-      run: |
-        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /home/runner/work/depot_tools
-        echo "/home/runner/work/depot_tools" >> $GITHUB_PATH
-        export PATH="/home/runner/work/depot_tools:$PATH"
-    # 3. YENİ YÖNTEM: Tarball İndir (Tek Dosya!)
-    - name: Fetch Chromium Source (Tarball)
+
+    # 1. Disk Temizliğine GEREK YOK (Docker kendi evini getiriyor)
+    
+    # 2. Kaynak Kodu Çek (Shallow - Sadece Android)
+    - name: Fetch Source (In Docker)
       run: |
         mkdir chromium
         cd chromium
-        
-        # Google'ın resmi son kararlı sürümünü (tar.xz) indir (~1.5 GB)
-        wget https://commondatastorage.googleapis.com/chromium-browser-official/chromium-120.0.6099.109.tar.xz
-        
-        # Arşivi aç
-        tar -xCf . chromium-120.0.6099.109.tar.xz
-        mv chromium-120.0.6099.109 src
-        rm chromium-120.0.6099.109.tar.xz # Yer açmak için siliyoruz
-    # 4. Bağımlılıklar
-    - name: Install Deps
+        fetch --nohooks --no-history android
+        gclient sync --nohooks --no-history --shallow
+
+    # 3. Bağımlılıklar (Zaten İmajda Var - Hızlı Geçiş)
+    - name: Install Deps (Minimal)
       run: |
-        export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
-        
-        # Eksik olan .gclient dosyasını oluştur (runhooks için şart)
-        cat <<EOF > .gclient
-        solutions = [
-          { "name": "src", "url": "https://chromium.googlesource.com/chromium/src.git", "managed": False, "custom_deps": {}, "custom_vars": {}, },
-        ]
-        target_os = ["android"]
-        EOF
-        
-        # Kurulum betiğini çalıştır
         ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
-        
-        # Hookları çalıştır (NodeJS, Clang vs. indirir)
         gclient runhooks
-    # 5. Derleme
-    - name: Compile SystemWebView
+
+    # 4. Derleme
+    - name: Compile
       run: |
-        export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
-        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0 blink_symbol_level=0'
+        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0'
         autoninja -C out/Default system_webview_apk
-    # 6. Sonucu Yükle
+
+    # 5. Yükle
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: SystemWebView
+        name: DockerWebView
         path: chromium/src/out/Default/apks/SystemWebView.apk
