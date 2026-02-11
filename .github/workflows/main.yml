@@ -1,4 +1,4 @@
-name: Real Android Browser Build (v4 - Absolute Paths)
+name: Real Android Browser Build (v5 - Ultra Light)
 
 on:
   workflow_dispatch:
@@ -6,62 +6,72 @@ on:
 jobs:
   build-chromium:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 360 # 6 Saat
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. Disk Temizliği
+    # 1. Agresif Temizlik (Swap Bile Yok!)
     - name: Maximize Disk Space
       uses: easimon/maximize-build-space@master
       with:
-        root-reserve-mb: 2048
-        swap-size-mb: 1024
+        root-reserve-mb: 512       # Kök dizinde yer ayır
+        swap-size-mb: 1024         # Minimum Swap
         remove-dotnet: 'true'
         remove-android: 'true'
+        remove-haskell: 'true'
         remove-codeql: 'true'
         remove-docker-images: 'true'
 
-    # 2. Araçları İndir (Depot Tools)
+    # 2. Araçlar (Depot Tools)
     - name: Install depot_tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /home/runner/work/depot_tools
         echo "/home/runner/work/depot_tools" >> $GITHUB_PATH
         export PATH="/home/runner/work/depot_tools:$PATH"
 
-    # 3. YENİ YÖNTEM: fetch --nohooks --no-history
-    - name: Fetch Chromium Source (Robust)
+    # 3. YENİ: Sadece Android Araçlarını İndir (Diğerlerini engelle)
+    - name: Fetch Chromium Source (Lightweight)
+      env:
+        DEPOT_TOOLS_UPDATE: 0
+        GCLIENT_PY3: 1
       run: |
         mkdir chromium
         cd chromium
-        # depot_tools yolunu ELLE veriyoruz
-        export PATH="/home/runner/work/depot_tools:$PATH"
         
-        # Sadece Android kodunu çek (geçmiş yok)
-        fetch --nohooks --no-history android
+        # Bu satır Google'a "Ben sadece Android istiyorum" diyor!
+        cat <<EOF > .gclient
+        solutions = [
+          { 
+            "name": "src", 
+            "url": "https://chromium.googlesource.com/chromium/src.git", 
+            "managed": False, 
+            "custom_deps": {}, 
+            "custom_vars": { "checkout_pgo_profiles": False, }, 
+          },
+        ]
+        target_os = ["android"]
+        EOF
         
-        # Çekildikten sonra gclient sync yap (hooks olmadan)
-        gclient sync --nohooks --no-history --shallow
+        # Sadece derinlik 1 (shallow) ile çek
+        gclient sync --nohooks --no-history --shallow --jobs 16
 
-    # 4. Bağımlılıklar (Kontrollü)
+    # 4. Bağımlılıklar (Sadece zorunlular)
     - name: Install Deps
       run: |
-        export PATH="/home/runner/work/depot_tools:$PATH"
-        # Dosya var mı kontrolü (Debug için ls)
-        ls -la chromium/src/build/install-build-deps-android.sh || (echo "DOSYA HALA YOK!" && exit 1)
-        
         cd chromium/src
-        chmod +x build/install-build-deps-android.sh
-        # Sudo ile çalıştır (bazı paketler sudo ister)
-        sudo ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
+        # Betiği elle indirip çalıştır (bazen gclient indirmez)
+        curl -LO https://chromium.googlesource.com/chromium/src/+/main/build/install-build-deps-android.sh?format=TEXT | base64 -d > install-build-deps-android.sh
+        chmod +x install-build-deps-android.sh
+        sudo ./install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
         gclient runhooks
 
-    # 5. Derleme
+    # 5. Derleme (Hata ayıklama sembolleri yok - Hız ve yer için)
     - name: Compile SystemWebView
       run: |
-        export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
-        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0'
+        # symbol_level=0 çok önemli! Yer kazandırır.
+        gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0 blink_symbol_level=0'
         autoninja -C out/Default system_webview_apk
 
     # 6. Sonucu Yükle
