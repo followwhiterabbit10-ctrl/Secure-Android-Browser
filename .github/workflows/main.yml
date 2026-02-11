@@ -1,0 +1,54 @@
+name: Android Browser Build
+
+on:
+  workflow_dispatch: # Manuel tetikleme için
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl git python3
+
+    - name: Install depot_tools
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        echo "$PWD/depot_tools" >> $GITHUB_PATH
+
+    - name: Fetch Chromium Code (Shallow)
+      run: |
+        mkdir chromium
+        cd chromium
+        echo "Fetching Chromium... (Simulated)"
+    
+    - name: Apply Patches
+      run: |
+        # Apply our local patches
+        echo "Applying patches from patches/ folder..."
+        # git apply ../patches/*.patch || echo "Patch application failed/skipped"
+
+    - name: Setup Build Configuration
+      run: |
+        echo "Copying args.gn..."
+        # cp ../build_config/args.gn chromium/src/out/Default/args.gn
+
+    - name: Build (Simulated)
+      run: |
+        echo "Building APK..."
+        # autoninja -C out/Default chrome_public_apk
+        echo "Build complete (Simulated)"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SecureBrowser-APK
+        path: README.md # Placeholder
