@@ -1,4 +1,4 @@
-name: Real Android Browser Build (v3 - Robust Fetch)
+name: Real Android Browser Build (v4 - Absolute Paths)
 
 on:
   workflow_dispatch:
@@ -19,59 +19,52 @@ jobs:
         swap-size-mb: 1024
         remove-dotnet: 'true'
         remove-android: 'true'
-        remove-haskell: 'true'
         remove-codeql: 'true'
         remove-docker-images: 'true'
 
-    # 2. Araçlar (Depot Tools)
+    # 2. Araçları İndir (Depot Tools)
     - name: Install depot_tools
       run: |
-        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        echo "$PWD/depot_tools" >> $GITHUB_PATH
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git /home/runner/work/depot_tools
+        echo "/home/runner/work/depot_tools" >> $GITHUB_PATH
+        export PATH="/home/runner/work/depot_tools:$PATH"
 
-    # 3. YENİ YÖNTEM: Gclient ile Manuel sync
-    - name: Fetch Chromium Source (Explicit)
+    # 3. YENİ YÖNTEM: fetch --nohooks --no-history
+    - name: Fetch Chromium Source (Robust)
       run: |
         mkdir chromium
         cd chromium
-        # Önce boş bir gclient config oluşturuyoruz
-        touch .gclient
-        cat <<EOF > .gclient
-        solutions = [
-          { "name": "src", "url": "https://chromium.googlesource.com/chromium/src.git", "managed": False, "custom_deps": {}, "custom_vars": { "checkout_pgo_profiles": False, }, },
-        ]
-        target_os = ["android"]
-        EOF
+        # depot_tools yolunu ELLE veriyoruz
+        export PATH="/home/runner/work/depot_tools:$PATH"
         
-        # Sonra sadece ihtiyacımız olanları indiriyoruz (hook çalıştırmadan)
+        # Sadece Android kodunu çek (geçmiş yok)
+        fetch --nohooks --no-history android
+        
+        # Çekildikten sonra gclient sync yap (hooks olmadan)
         gclient sync --nohooks --no-history --shallow
 
     # 4. Bağımlılıklar (Kontrollü)
     - name: Install Deps
       run: |
-        # Önce src klasörü var mı kontrol et, yoksa hata ver
-        ls -F chromium/src/build/install-build-deps-android.sh || (echo "DOSYA YOK! İndirme başarısız." && exit 1)
+        export PATH="/home/runner/work/depot_tools:$PATH"
+        # Dosya var mı kontrolü (Debug için ls)
+        ls -la chromium/src/build/install-build-deps-android.sh || (echo "DOSYA HALA YOK!" && exit 1)
         
         cd chromium/src
-        # Betiği çalıştırılabilir yap
         chmod +x build/install-build-deps-android.sh
-        ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
+        # Sudo ile çalıştır (bazı paketler sudo ister)
+        sudo ./build/install-build-deps-android.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
         gclient runhooks
 
-    # 5. Ayarlar
-    - name: Configure
-      run: |
-        echo "Configuring..."
-        # cp ../../build_config/args.gn chromium/src/out/Default/args.gn
-
-    # 6. Derleme
+    # 5. Derleme
     - name: Compile SystemWebView
       run: |
+        export PATH="/home/runner/work/depot_tools:$PATH"
         cd chromium/src
         gn gen out/Default --args='target_os="android" target_cpu="arm64" is_debug=false symbol_level=0'
         autoninja -C out/Default system_webview_apk
 
-    # 7. Sonucu Yükle
+    # 6. Sonucu Yükle
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
