@@ -1,17 +1,17 @@
-name: Secure Browser Build (v10 - Self-Hosted Setup)
+name: Secure Browser Build (v11 - Initialized Depot Tools)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04 # En stabil sürüm
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. Temizlik & Hazırlık
+    # 1. Temizlik
     - name: Maximize Disk Space
       uses: easimon/maximize-build-space@master
       with:
@@ -19,61 +19,58 @@ jobs:
         swap-size-mb: 1024
         remove-dotnet: 'true'
         remove-android: 'true'
-        remove-codeql: 'true'
         remove-docker-images: 'true'
 
-    # 2. Araçları (Depot Tools) Biz Kuruyoruz
-    - name: Install Depot Tools
+    # 2. Depot Tools Kurulumu ve BAŞLATILMASI (Önemli kısım burası!)
+    - name: Setup Depot Tools
       run: |
         git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
         echo "$PWD/depot_tools" >> $GITHUB_PATH
         export PATH="$PWD/depot_tools:$PATH"
+        
+        # Bu satır hatayı çözecek: Gclient'ı bir kez boş çalıştırıp güncellemesini sağla
+        gclient --version || true
+        # Update depot tools
+        update_depot_tools
 
-    # 3. Cromite Kaynağını Çek (Hızlı Clonlama)
-    - name: Fetch Cromite Source
+    # 3. Kaynak Kodun İndirilmesi (Cromite Fork)
+    - name: Fetch Cromite
       run: |
+        export PATH="$PWD/depot_tools:$PATH"
         git clone --depth 1 https://github.com/uazo/cromite.git source
         cd source
         git submodule update --init --recursive --depth 1
 
-    # 4. Gerekli Paketleri Kur (En Temel Olanlar)
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y python3 ninja-build curl
-        cd source
-        # Cromite'in kendi kurulum betiğini çalıştır (Eğer varsa)
-        # Yoksa Chromium'unkini manuel indireceğiz
-        curl -LO https://chromium.googlesource.com/chromium/src/+/main/build/install-build-deps-android.sh?format=TEXT | base64 -d > install-deps.sh
-        chmod +x install-deps.sh
-        sudo ./install-deps.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
-
-    # 5. Ayarları Yap (GN Args)
-    - name: Setup GN
+    # 4. Derleme Ortamının Hazırlanması
+    - name: Setup Build Env
       run: |
         export PATH="$PWD/depot_tools:$PATH"
         cd source
-        mkdir -p out/Default
         
-        # Basit ayarlar
+        # Gerekli bağımlılıkları yükle (Debian paketleri)
+        sudo apt-get update
+        sudo apt-get install -y python3 ninja-build curl
+        
+        # GN Config Oluştur
+        mkdir -p out/Default
         echo 'target_os="android"' > out/Default/args.gn
         echo 'target_cpu="arm64"' >> out/Default/args.gn
         echo 'is_debug=false' >> out/Default/args.gn
         echo 'symbol_level=0' >> out/Default/args.gn
         
-        # GN config oluştur
+        # GN komutunu çalıştır
         gn gen out/Default
 
-    # 6. Derle!
+    # 5. Derle!
     - name: Compile
       run: |
         export PATH="$PWD/depot_tools:$PATH"
         cd source
         autoninja -C out/Default chrome_public_apk
 
-    # 7. Yükle
+    # 6. Yükle
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: SecureBrowser-v10
+        name: SecureBrowser-Release
         path: source/out/Default/apks/ChromePublic.apk
