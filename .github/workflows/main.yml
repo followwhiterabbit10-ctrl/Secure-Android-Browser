@@ -1,66 +1,79 @@
-name: Secure Browser Build (v9 - Cromite Fixed Tag)
+name: Secure Browser Build (v10 - Self-Hosted Setup)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-full-browser:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-22.04 # En stabil sürüm
     timeout-minutes: 360
-
-    container:
-      # KESİN SÜRÜM ETİKETİ (Latest değil!)
-      image: uazo/cromite-build:133-1
 
     steps:
     - uses: actions/checkout@v3
 
-    # 1. Temiz Kaynak Kodu Çek
-    - name: Fetch Clean Source
-      run: |
-        # Cromite deposunu çek
-        git clone https://github.com/uazo/cromite.git cromite
-        cd cromite
-        # Alt modülleri güncelle (recursive çok önemlidir)
-        git submodule update --init --recursive
+    # 1. Temizlik & Hazırlık
+    - name: Maximize Disk Space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 2048
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-codeql: 'true'
+        remove-docker-images: 'true'
 
-    # 2. ÖZELLEŞTİRMELER
-    - name: Apply Customizations
+    # 2. Araçları (Depot Tools) Biz Kuruyoruz
+    - name: Install Depot Tools
       run: |
-        cd cromite
-        echo "Özel özellikler yükleniyor..."
-        # Şimdilik boş, sonra dolduracağız
-        ls -la
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        echo "$PWD/depot_tools" >> $GITHUB_PATH
+        export PATH="$PWD/depot_tools:$PATH"
 
-    # 3. Derleme Hazırlığı
-    - name: Setup Build Config
+    # 3. Cromite Kaynağını Çek (Hızlı Clonlama)
+    - name: Fetch Cromite Source
       run: |
-        cd cromite
-        mkdir -p out/Release
-        # Varsayılan ayarları kopyala
-        # (Not: Cromite yapısında args.gn farklı yerde olabilir, 
-        # o yüzden garanti olsun diye elle yazıyoruz)
-        echo 'target_os="android"' > out/Release/args.gn
-        echo 'target_cpu="arm64"' >> out/Release/args.gn
-        echo 'is_debug=false' >> out/Release/args.gn
-        echo 'symbol_level=0' >> out/Release/args.gn
-        echo 'blink_symbol_level=0' >> out/Release/args.gn
-        echo 'android_channel="stable"' >> out/Release/args.gn
+        git clone --depth 1 https://github.com/uazo/cromite.git source
+        cd source
+        git submodule update --init --recursive --depth 1
+
+    # 4. Gerekli Paketleri Kur (En Temel Olanlar)
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 ninja-build curl
+        cd source
+        # Cromite'in kendi kurulum betiğini çalıştır (Eğer varsa)
+        # Yoksa Chromium'unkini manuel indireceğiz
+        curl -LO https://chromium.googlesource.com/chromium/src/+/main/build/install-build-deps-android.sh?format=TEXT | base64 -d > install-deps.sh
+        chmod +x install-deps.sh
+        sudo ./install-deps.sh --no-prompt --no-arm --no-chromeos-fonts --no-nacl
+
+    # 5. Ayarları Yap (GN Args)
+    - name: Setup GN
+      run: |
+        export PATH="$PWD/depot_tools:$PATH"
+        cd source
+        mkdir -p out/Default
         
-        # Markalama
-        echo 'app_name="Secure Browser"' >> out/Release/args.gn
+        # Basit ayarlar
+        echo 'target_os="android"' > out/Default/args.gn
+        echo 'target_cpu="arm64"' >> out/Default/args.gn
+        echo 'is_debug=false' >> out/Default/args.gn
+        echo 'symbol_level=0' >> out/Default/args.gn
+        
+        # GN config oluştur
+        gn gen out/Default
 
-    # 4. DERLEME
-    - name: Compile APK
+    # 6. Derle!
+    - name: Compile
       run: |
-        cd cromite
-        # Cromite'in kendi derleme scriptini kullanıyoruz
-        # Bu script gerekli GN ve Ninja ayarlarını otomatik yapar
-        ./build.sh --target chrome_public_apk
+        export PATH="$PWD/depot_tools:$PATH"
+        cd source
+        autoninja -C out/Default chrome_public_apk
 
-    # 5. Sonucu Yükle
-    - name: Upload APK
+    # 7. Yükle
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: SecureBrowser-Release-v1.0
-        path: cromite/out/Release/apks/ChromePublic.apk
+        name: SecureBrowser-v10
+        path: source/out/Default/apks/ChromePublic.apk
